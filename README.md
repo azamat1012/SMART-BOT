@@ -133,3 +133,4 @@ python download_phrases.py
 
 The code is written to automate the proccess of answering to FAQ
 # Smart-bot
+# SMART-BOT
