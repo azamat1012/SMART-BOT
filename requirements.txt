@@ -1,0 +1,6 @@
+vk-api==11.9.9
+requests==2.28.1
+python-dotenv==1.0.1
+python-environ==0.4.54
+python-telegram-bot==13.7
+google-cloud-dialogflow==2.41.1
