@@ -26,7 +26,6 @@ class TelegramLogHandler(logging.Handler):
 
 
 def detect_intent_texts(project_id, session_id, text, language_code):
-    from google.cloud import dialogflow
     session_client = dialogflow.SessionsClient()
     session = session_client.session_path(project_id, session_id)
     text_input = dialogflow.TextInput(text=text, language_code=language_code)
@@ -39,24 +38,38 @@ def detect_intent_texts(project_id, session_id, text, language_code):
     return response
 
 
-def handle_messages(update: Update, context: CallbackContext) -> None:
-    project_id = os.environ['PROJECT_ID']
-    if not project_id:
-        logger.error(
-            "PROJECT_ID не был найден. Пожалуйста, напишите PROJECT_ID в .env")
-    session_id = str(update.message.chat_id)
+def handle_messages(update: Update, context: CallbackContext, project_id: str) -> None:
+    session_id = f"tg-{update.message.chat_id}"
     text = update.message.text
     language_code = "ru"
     user = update.message.from_user
+    response = detect_intent_texts(project_id, session_id, text, language_code)
+    if not response.query_result.intent.is_fallback:
+        update.message.reply_text(response.query_result.fulfillment_text)
+        logger.info(
+            f"Отправлен ответ пользователю: {user}:\n{response.query_result.fulfillment_text}")
+
+
+def start_bot(tg_bot_token: str, admin_chat_id: str, project_id: str):
+    updater = Updater(tg_bot_token, use_context=True)
+    dp = updater.dispatcher
+    dp.add_handler(CommandHandler('start', lambda update,
+                   context: handle_messages(update, context, project_id)))
+    dp.add_handler(MessageHandler(
+        Filters.text & (~Filters.command), lambda update, context: handle_messages(update, context, project_id)))
+    telegram_handler = TelegramLogHandler(updater.bot, admin_chat_id)
+    telegram_handler.setLevel(logging.INFO)
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    telegram_handler.setFormatter(formatter)
+    logger.addHandler(telegram_handler)
+    logger.info("Бот начинается")
+    updater.start_polling()
+
     try:
-        response = detect_intent_texts(
-            project_id, session_id, text, language_code)
-        if not response.query_result.intent.is_fallback:
-            update.message.reply_text(response.query_result.fulfillment_text)
-            logger.info(
-                f"Отправлен ответ пользователю: {user}:\n{response.query_result.fulfillment_text}")
+        updater.idle()
     except Exception as e:
-        logger.error(f"Ошибка при обработке вопроса: {str(e)}")
+        logger.error(f"Бот упал: {e}")
+        raise
 
 
 def main():
@@ -66,27 +79,29 @@ def main():
     )
 
     load_dotenv()
-    tg_bot_token = os.environ['TG_BOT_TOKEN']
+
+    tg_bot_token = os.environ.get('TG_BOT_TOKEN')
     admin_chat_id = os.getenv('ADMIN_CHAT_ID_TG')
+    project_id = os.environ.get('PROJECT_ID')
+
+    if not tg_bot_token:
+        logger.error(
+            "TG_BOT_TOKEN не найден. Пожалуйста, добавьте TG_BOT_TOKEN в .env")
+        return
+    if not admin_chat_id:
+        logger.error(
+            "ADMIN_CHAT_ID_TG не найден. Пожалуйста, добавьте ADMIN_CHAT_ID_TG в .env")
+        return
+    if not project_id:
+        logger.error(
+            "PROJECT_ID не найден. Пожалуйста, добавьте PROJECT_ID в .env")
+        return
+
     while True:
         try:
-            updater = Updater(tg_bot_token)
-            dp = updater.dispatcher
-            dp.add_handler(CommandHandler('start', handle_messages))
-            dp.add_handler(MessageHandler(
-                Filters.text & (~Filters.command), handle_messages
-            ))
-            telegram_handler = TelegramLogHandler(updater.bot, admin_chat_id)
-            telegram_handler.setLevel(logging.INFO)
-            formatter = logging.Formatter(
-                '%(asctime)s - %(levelname)s - %(message)s')
-            telegram_handler.setFormatter(formatter)
-            logger.addHandler(telegram_handler)
-            logger.info("Бот начинается")
-            updater.start_polling()
-            updater.idle()
+            start_bot(tg_bot_token, admin_chat_id, project_id)
         except Exception as e:
-            logger.error(f"Бот упал: {e}")
+            logger.error(f"Ошибка в работе бота: {e}")
             sleep(5)
             continue
 
