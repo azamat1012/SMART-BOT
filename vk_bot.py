@@ -42,31 +42,49 @@ def detect_intent_texts(project_id, session_id, text, language_code):
     return response
 
 
-def handle_messages(event, vk_api):
-    project_id = os.environ['PROJECT_ID']
-    if not project_id:
-        logger.error(
-            "PROJECT_ID не найден. Пожалуйста, добавьте PROJECT_ID в .env")
-    session_id = event.user_id
+def handle_messages(event, vk_api, project_id: str):
+    session_id = f"vk-{event.user_id}"
     text = event.text
     language_code = 'ru'
+    response = detect_intent_texts(project_id, session_id, text, language_code)
+    if not response.query_result.intent.is_fallback:
+        vk_api.messages.send(
+            user_id=event.user_id,
+            message=response.query_result.fulfillment_text,
+            random_id=random.randint(1, 10000)
+        )
+        logger.info(
+            f"Отправлен ответ пользователю {session_id}: '{response.query_result.fulfillment_text}'"
+        )
+    else:
+        logger.info("Ответ не отправлен (обнаружен fallback intent)")
 
-    try:
-        response = detect_intent_texts(
-            project_id, session_id, text, language_code)
-        if not response.query_result.intent.is_fallback:
-            vk_api.messages.send(
-                user_id=event.user_id,
-                message=response.query_result.fulfillment_text,
-                random_id=random.randint(1, 10000)
-            )
-            logger.info(
-                f"Отправлен ответ пользователю {session_id}: '{response.query_result.fulfillment_text}'"
-            )
-        else:
-            logger.info("Ответ не отправлен (обнаружен fallback intent)")
-    except Exception as e:
-        logger.error(f"Ошибка при обработке сообщения: {str(e)}")
+
+def start_bot(vk_bot_token: str, admin_chat_id: str, project_id: str):
+    vk_session = vk.VkApi(token=vk_bot_token)
+    vk_api = vk_session.get_api()
+    logger.info(f"Бот активирован с токеном: {vk_bot_token[:5]}...")
+    if admin_chat_id:
+        vk_handler = VkLogHandler(vk_api, admin_chat_id)
+        vk_handler.setLevel(logging.INFO)
+        formatter = logging.Formatter(
+            '%(asctime)s - %(levelname)s - %(message)s')
+        vk_handler.setFormatter(formatter)
+        logger.addHandler(vk_handler)
+        logger.info(f"Логи будут отправляться в VK чат: {admin_chat_id}")
+    else:
+        logger.info("ADMIN_CHAT_ID не указан, логи будут только в консоли")
+
+    longpoll = VkLongPoll(vk_session)
+    logger.info("Начинаю слушать события...")
+
+    for event in longpoll.listen():
+        if event.type == VkEventType.MESSAGE_NEW and event.to_me:
+            logger.info(f"Получен запрос от {event.user_id}: '{event.text}'")
+            try:
+                handle_messages(event, vk_api, project_id)
+            except Exception as e:
+                logger.error(f"Ошибка при обработке сообщения: {str(e)}")
 
 
 def main():
@@ -75,6 +93,7 @@ def main():
         level=logging.INFO
     )
     load_dotenv()
+
     vk_bot_token = os.environ.get('VK_BOT_TOKEN')
     admin_chat_id = os.getenv('ADMIN_CHAT_ID_VK')
     project_id = os.environ.get('PROJECT_ID')
@@ -87,33 +106,10 @@ def main():
         logger.error(
             "PROJECT_ID не найден. Пожалуйста, добавьте PROJECT_ID в .env")
         return
+
     while True:
         try:
-
-            vk_session = vk.VkApi(token=vk_bot_token)
-            vk_api = vk_session.get_api()
-            logger.info(f"Бот активирован с токеном: {vk_bot_token[:5]}...")
-            if admin_chat_id:
-                vk_handler = VkLogHandler(vk_api, admin_chat_id)
-                vk_handler.setLevel(logging.INFO)
-                formatter = logging.Formatter(
-                    '%(asctime)s - %(levelname)s - %(message)s')
-                vk_handler.setFormatter(formatter)
-                logger.addHandler(vk_handler)
-                logger.info(
-                    f"Логи будут отправляться в VK чат: {admin_chat_id}")
-            else:
-                logger.info(
-                    "ADMIN_CHAT_ID не указан, логи будут только в консоли")
-
-            longpoll = VkLongPoll(vk_session)
-            logger.info("Начинаю слушать события...")
-
-            for event in longpoll.listen():
-                if event.type == VkEventType.MESSAGE_NEW and event.to_me:
-                    logger.info(
-                        f"Получен запрос от {event.user_id}: '{event.text}'")
-                    handle_messages(event, vk_api)
+            start_bot(vk_bot_token, admin_chat_id, project_id)
         except Exception as e:
             logger.error(f"Произошла ошибка: {e}")
             sleep(5)
