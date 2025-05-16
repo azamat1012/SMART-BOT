@@ -95,7 +95,7 @@ def main():
     load_dotenv()
 
     vk_bot_token = os.environ.get('VK_BOT_TOKEN')
-    admin_chat_id = os.getenv('ADMIN_CHAT_ID_VK')
+    admin_chat_id = os.environ.get('ADMIN_CHAT_ID_VK')
     project_id = os.environ.get('PROJECT_ID')
 
     if not vk_bot_token:
