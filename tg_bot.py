@@ -81,7 +81,7 @@ def main():
     load_dotenv()
 
     tg_bot_token = os.environ.get('TG_BOT_TOKEN')
-    admin_chat_id = os.getenv('ADMIN_CHAT_ID_TG')
+    admin_chat_id = os.environ.get('ADMIN_CHAT_ID_TG')
     project_id = os.environ.get('PROJECT_ID')
 
     if not tg_bot_token:
